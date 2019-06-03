@@ -34,42 +34,45 @@ def get_rpmlint_json(urlrpmlint, project, arch, repo, rpmlint_error):
 
 
 def main(args):
-    rpmlint_json = get_rpmlint_json(args.urlrpmlint, args.project, args.arch, args.repo, args.rpmlint_error)
+
+    config = ConfigParser()
+    if args.config:
+        config.read(args.config)
+
+    if args.urlrpmlint is not None:
+        config["BuildCheckStatistics_instance"]["url"] = args.urlrpmlint
+    if args.project is not None:
+        config["BuildCheckStatistics_instance"]["project"] = args.project
+    if args.arch is not None:
+        config["BuildCheckStatistics_instance"]["architecture"] = args.arch
+    if args.repo is not None:
+        config["BuildCheckStatistics_instance"]["repository"] = args.repo
+
+    if args.urlbugzilla is not None:
+        config["Bugzilla_instance"]["url"] = args.urlbugzilla
+    if args.username is not None:
+        config["Bugzilla_instance"]["username"] = args.username
+    if args.password is not None:
+        config["Bugzilla_instance"]["password"] = args.password
+
+    rpmlint_json = get_rpmlint_json(config["BuildCheckStatistics_instance"]["url"],
+                                    config["BuildCheckStatistics_instance"]["project"],
+                                    config["BuildCheckStatistics_instance"]["architecture"],
+                                    config["BuildCheckStatistics_instance"]["repository"],
+                                    args.rpmlint_error)
     packages = []
     for p in rpmlint_json:
         packages.append(p["package"])
     print(packages)
 
-    bugzilla_api = bugzilla_init(args.urlbugzilla, args.username, args.password)
-    parent_bug = bugzilla_api.getbug(args.bug)
+    bugzilla_api = bugzilla_init(config["Bugzilla_instance"]["url"],
+                                 config["Bugzilla_instance"]["username"],
+                                 config["Bugzilla_instance"]["password"])
+    parent_bug = bugzilla_api.getbug(config["Bugzilla_bug"]["blocks"])
     print(parent_bug)
+
     # for package in packages:
-    #     data_child_bug = bugzilla_api.build_createbug(
-    #         product=None,
-    #         component=None,
-    #         version=None,
-    #         summary=None,
-    #         description=None,
-    #         comment_private=None,
-    #         blocks=args.bug,
-    #         cc=None,
-    #         assigned_to=None,
-    #         keywords=None,
-    #         depends_on=None,
-    #         groups=None,
-    #         op_sys=None,
-    #         platform=None,
-    #         priority=None,
-    #         qa_contact=None,
-    #         resolution=None,
-    #         severity=None,
-    #         status=None,
-    #         target_milestone=None,
-    #         target_release=None,
-    #         url=None,
-    #         sub_component=None,
-    #         alias=None,
-    #         comment_tags=None)
+    #     data_child_bug = bugzilla_api.build_createbug(**dict(config.items("Bugzilla_bug")))
     #     bugzilla_api.createbug(data_child_bug)
 
 if __name__ == '__main__':
@@ -79,21 +82,20 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings')
     parser_flags = parser.add_mutually_exclusive_group()
-    parser_bugzilla_credentials = parser.add_mutually_exclusive_group()
     parser_bugzilla_login = parser.add_argument_group()
     parser.add_argument("rpmlint_error", metavar="ERRORTYPE", help="rpmlint error type to create bug reports for")
     parser_flags.add_argument("-v", "--verbosity", help="increase output verbosity", action="count", default=0)
     parser_flags.add_argument("-q", "--quiet", help="try to be as quiet as possible", action="store_true")
-    parser.add_argument("--urlrpmlint", metavar="BCS_INSTANCE", help="URL of BuildCheckStatistics (rpmlint) instance",
-                        required="true")
-    parser.add_argument("-p", "--project", help="name of project", required="true")
-    parser.add_argument("-a", "--arch", metavar="ARCHITECTURE", help="architecture type", required="true")
-    parser.add_argument("-r", "--repo", metavar="REPOSITORY", help="name of repository", required="true")
-    parser.add_argument("--urlbugzilla", metavar="BUGZILLA_INSTANCE", help="URL of bugzilla instance", required="true")
+    parser.add_argument("--urlrpmlint", metavar="BCS_INSTANCE", help="URL of BuildCheckStatistics (rpmlint) instance")
+    parser.add_argument("-p", "--project", help="name of project")
+    parser.add_argument("-a", "--arch", metavar="ARCHITECTURE", help="architecture type")
+    parser.add_argument("-r", "--repo", metavar="REPOSITORY", help="name of repository")
+    parser.add_argument("--urlbugzilla", metavar="BUGZILLA_INSTANCE", help="URL of bugzilla instance")
     parser_bugzilla_login.add_argument("--username", help="username for bugzilla instance")
     parser_bugzilla_login.add_argument("--password", help="password for bugzilla instance")
-    parser.add_argument("-b", "--bug", help="bugzilla parent bug id for generated bug reports", type=int,
-                        required=True)
+    parser.add_argument("-b", "--bug", help="bugzilla parent bug id for generated bug reports", type=int)
+    parser.add_argument("-c", "--config", metavar="CONFIG_FILE", help="configuration file with further settings;"
+                                                                      " passed arguments will overwrite config")
 
     args = parser.parse_args()
     sys.exit(main(args))
