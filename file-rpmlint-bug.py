@@ -47,13 +47,14 @@ def main(args):
         config["BuildCheckStatistics_instance"]["architecture"] = args.arch
     if args.repo is not None:
         config["BuildCheckStatistics_instance"]["repository"] = args.repo
-
     if args.urlbugzilla is not None:
         config["Bugzilla_instance"]["url"] = args.urlbugzilla
     if args.username is not None:
         config["Bugzilla_instance"]["username"] = args.username
     if args.password is not None:
         config["Bugzilla_instance"]["password"] = args.password
+    if args.bug is not None:
+        config["Bugzilla_bug"]["blocks"] = str(args.bug)
 
     rpmlint_json = get_rpmlint_json(config["BuildCheckStatistics_instance"]["url"],
                                     config["BuildCheckStatistics_instance"]["project"],
