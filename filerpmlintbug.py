@@ -5,7 +5,6 @@ from os.path import join
 import sys
 import urllib.parse
 import urllib.request
-import json
 
 __author__ = "Martin Rey <mrey@suse.de>"
 
@@ -59,17 +58,34 @@ def main(args):
                                     config["BuildCheckStatistics_instance"]["project"],
                                     config["BuildCheckStatistics_instance"]["architecture"],
                                     config["BuildCheckStatistics_instance"]["repository"])
+    data = {}
+    for error in errors:
+        print("DEBUG: error=" + error)
+        data[error]["bugconfig"]["owner"] = config["Bugzilla_instance"]["parent_bug_owner"]
+        data[error]["bugconfig"]["product"] = config["Bugzilla_instance"]["parent_bug_product"]
+        data[error]["bugconfig"]["component"] = config["Bugzilla_instance"]["parent_bug_component"]
+        data[error]["bugconfig"]["summary"] = config["Bugzilla_instance"]["parent_bug_summary"]
+        data[error]["bugconfig"]["version"] = config["Bugzilla_instance"]["parent_bug_version"]
+        data[error]["bugconfig"]["description"] = config["Bugzilla_instance"]["parent_bug_description"]
 
-    packages = get_rpmlint_package_list(config["BuildCheckStatistics_instance"]["url"],
-                                        config["BuildCheckStatistics_instance"]["project"],
-                                        config["BuildCheckStatistics_instance"]["architecture"],
-                                        config["BuildCheckStatistics_instance"]["repository"],
-                                        args.rpmlint_error)
+        data[error]["packages"] = get_rpmlint_package_list(config["BuildCheckStatistics_instance"]["url"],
+                                               config["BuildCheckStatistics_instance"]["project"],
+                                               config["BuildCheckStatistics_instance"]["architecture"],
+                                               config["BuildCheckStatistics_instance"]["repository"],
+                                               error)
+
+    # bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
+    #               config["Bugzilla_instance"]["login_password"])
+    # bug = bzapi.getbug(1022224)
+    # print(pprint.pprint(bug.__dict__.keys()))
+
+
+
 
 if __name__ == '__main__':
     # file-rpmlint-bug --urlrpmlint https://rpmlint.opensuse.org --project openSUSE:Factory --arch x86_64 \
     # --repo standard --username admin --password 1234bugzilla --urlbugzilla https://bugzilla.opensuse.org --bug 23154 \
-    # non-standard-group
+    # non-standard-group --config config.ini
 
     parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings')
     parser_flags = parser.add_mutually_exclusive_group()
