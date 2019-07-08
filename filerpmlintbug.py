@@ -1,6 +1,8 @@
 import argparse
 import bugzilla
 from configparser import ConfigParser
+import json
+import toml
 from os.path import join
 import sys
 import urllib.parse
@@ -38,47 +40,58 @@ def main(args):
         config.read(args.config)
 
     if args.urlrpmlint is not None:
-        config["BuildCheckStatistics_instance"]["url"] = args.urlrpmlint
+        config['BuildCheckStatistics_instance']['url'] = args.urlrpmlint
     if args.project is not None:
-        config["BuildCheckStatistics_instance"]["project"] = args.project
+        config['BuildCheckStatistics_instance']['project'] = args.project
     if args.arch is not None:
-        config["BuildCheckStatistics_instance"]["architecture"] = args.arch
+        config['BuildCheckStatistics_instance']['architecture'] = args.arch
     if args.repo is not None:
-        config["BuildCheckStatistics_instance"]["repository"] = args.repo
+        config['BuildCheckStatistics_instance']['repository'] = args.repo
     if args.urlbugzilla is not None:
-        config["Bugzilla_instance"]["url"] = args.urlbugzilla
+        config['Bugzilla_instance']['url'] = args.urlbugzilla
     if args.username is not None:
-        config["Bugzilla_instance"]["login_username"] = args.username
+        config['Bugzilla_instance']['login_username'] = args.username
     if args.password is not None:
-        config["Bugzilla_instance"]["login_password"] = args.password
+        config['Bugzilla_instance']['login_password'] = args.password
     if args.bug is not None:
-        config["Bugzilla_bug"]["blocks"] = str(args.bug)
+        config['Bugzilla_bug']['blocks'] = str(args.bug)
 
-    errors = get_rpmlint_error_list(config["BuildCheckStatistics_instance"]["url"],
-                                    config["BuildCheckStatistics_instance"]["project"],
-                                    config["BuildCheckStatistics_instance"]["architecture"],
-                                    config["BuildCheckStatistics_instance"]["repository"])
+    errors = get_rpmlint_error_list(config['BuildCheckStatistics_instance']['url'],
+                                    config['BuildCheckStatistics_instance']['project'],
+                                    config['BuildCheckStatistics_instance']['architecture'],
+                                    config['BuildCheckStatistics_instance']['repository'])
+
     data = {}
     for error in errors:
-        print("DEBUG: error=" + error)
-        data[error]["bugconfig"]["owner"] = config["Bugzilla_instance"]["parent_bug_owner"]
-        data[error]["bugconfig"]["product"] = config["Bugzilla_instance"]["parent_bug_product"]
-        data[error]["bugconfig"]["component"] = config["Bugzilla_instance"]["parent_bug_component"]
-        data[error]["bugconfig"]["summary"] = config["Bugzilla_instance"]["parent_bug_summary"]
-        data[error]["bugconfig"]["version"] = config["Bugzilla_instance"]["parent_bug_version"]
-        data[error]["bugconfig"]["description"] = config["Bugzilla_instance"]["parent_bug_description"]
+        data = {error: dict(bug_config=dict(owner=config['Bugzilla_instance']['parent_bug_owner'],
+                                                 product=config['Bugzilla_instance']['parent_bug_product'],
+                                                 component=config['Bugzilla_instance']['parent_bug_component'],
+                                                 summary=config['Bugzilla_instance']['parent_bug_summary'],
+                                                 version=config['Bugzilla_instance']['parent_bug_version'],
+                                                 description=config['Bugzilla_instance']['parent_bug_description'],
+                                                 bug_id=''),
+                                 packages=get_rpmlint_package_list(config['BuildCheckStatistics_instance']['url'],
+                                                                   config['BuildCheckStatistics_instance']['project'],
+                                                                   config['BuildCheckStatistics_instance'][
+                                                                          'architecture'],
+                                                                   config['BuildCheckStatistics_instance'][
+                                                                          'repository'],
+                                                                   error))}
 
-        data[error]["packages"] = get_rpmlint_package_list(config["BuildCheckStatistics_instance"]["url"],
-                                               config["BuildCheckStatistics_instance"]["project"],
-                                               config["BuildCheckStatistics_instance"]["architecture"],
-                                               config["BuildCheckStatistics_instance"]["repository"],
-                                               error)
 
+        # data[error]["bug_config"]["owner"] = config["Bugzilla_instance"]["parent_bug_owner"]
+        # data[error]["bug_config"]["product"] = config["Bugzilla_instance"]["parent_bug_product"]
+        # data[error]["bug_config"]["component"] = config["Bugzilla_instance"]["parent_bug_component"]
+        # data[error]["bug_config"]["summary"] = config["Bugzilla_instance"]["parent_bug_summary"]
+        # data[error]["bug_config"]["version"] = config["Bugzilla_instance"]["parent_bug_version"]
+        # data[error]["bug_config"]["description"] = config["Bugzilla_instance"]["parent_bug_description"]
+
+        print(json.dumps(data, indent=4, sort_keys=True))
+
+    #
     # bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
-    #               config["Bugzilla_instance"]["login_password"])
-    # bug = bzapi.getbug(1022224)
-    # print(pprint.pprint(bug.__dict__.keys()))
-
+    #                       config["Bugzilla_instance"]["login_password"])
+    # bug_create_info = bzapi.build_createbug()
 
 
 
