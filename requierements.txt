@@ -1,4 +1,0 @@
-argparse
-bugzilla
-requests
-urllib3

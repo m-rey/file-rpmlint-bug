@@ -56,27 +56,44 @@ def main(args):
     if args.bug is not None:
         config['Bugzilla_bug']['blocks'] = str(args.bug)
 
-    errors = get_rpmlint_error_list(config['BuildCheckStatistics_instance']['url'],
-                                    config['BuildCheckStatistics_instance']['project'],
-                                    config['BuildCheckStatistics_instance']['architecture'],
-                                    config['BuildCheckStatistics_instance']['repository'])
+    errors = get_rpmlint_error_list(
+        config['BuildCheckStatistics_instance']['url'],
+        config['BuildCheckStatistics_instance']['project'],
+        config['BuildCheckStatistics_instance']['architecture'],
+        config['BuildCheckStatistics_instance']['repository']
+    )
 
-    data = {}
+
     for error in errors:
+        packages = get_rpmlint_package_list(
+            config['BuildCheckStatistics_instance']['url'],
+            config['BuildCheckStatistics_instance']['project'],
+            config['BuildCheckStatistics_instance']['architecture'],
+            config['BuildCheckStatistics_instance']['repository'],
+            error
+            )
+        package_data = {}
+        for package in packages:
+            package_data.update({package: dict(bug_config=dict(owner=config['Bugzilla_instance']['parent_bug_owner'],
+                                               product=config['Bugzilla_instance']['parent_bug_product'],
+                                               component=config['Bugzilla_instance']['parent_bug_component'],
+                                               summary=config['Bugzilla_instance']['parent_bug_summary'],
+                                               version=config['Bugzilla_instance']['parent_bug_version'],
+                                               description=config['Bugzilla_instance']['parent_bug_description'],
+                                               bug_id=''
+                                               ))})
+
         data = {error: dict(bug_config=dict(owner=config['Bugzilla_instance']['parent_bug_owner'],
-                                                 product=config['Bugzilla_instance']['parent_bug_product'],
-                                                 component=config['Bugzilla_instance']['parent_bug_component'],
-                                                 summary=config['Bugzilla_instance']['parent_bug_summary'],
-                                                 version=config['Bugzilla_instance']['parent_bug_version'],
-                                                 description=config['Bugzilla_instance']['parent_bug_description'],
-                                                 bug_id=''),
-                                 packages=get_rpmlint_package_list(config['BuildCheckStatistics_instance']['url'],
-                                                                   config['BuildCheckStatistics_instance']['project'],
-                                                                   config['BuildCheckStatistics_instance'][
-                                                                          'architecture'],
-                                                                   config['BuildCheckStatistics_instance'][
-                                                                          'repository'],
-                                                                   error))}
+                                            product=config['Bugzilla_instance']['parent_bug_product'],
+                                            component=config['Bugzilla_instance']['parent_bug_component'],
+                                            summary=config['Bugzilla_instance']['parent_bug_summary'],
+                                            version=config['Bugzilla_instance']['parent_bug_version'],
+                                            description=config['Bugzilla_instance']['parent_bug_description'],
+                                            bug_id=''
+                                            ),
+                            packages=package_data
+                            )
+                }
 
 
         # data[error]["bug_config"]["owner"] = config["Bugzilla_instance"]["parent_bug_owner"]
@@ -88,11 +105,9 @@ def main(args):
 
         print(json.dumps(data, indent=4, sort_keys=True))
 
-    #
     # bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
     #                       config["Bugzilla_instance"]["login_password"])
     # bug_create_info = bzapi.build_createbug()
-
 
 
 if __name__ == '__main__':
