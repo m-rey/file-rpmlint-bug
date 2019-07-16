@@ -7,9 +7,12 @@ from os.path import join
 import sys
 import urllib.parse
 import urllib.request
+import subprocess
 
 __author__ = "Martin Rey <mrey@suse.de>"
 
+
+osc_package_maintainers = {}
 
 def bugzilla_init(apiurl, username, password):
     apiurl_split = urllib.parse.urlsplit(apiurl)
@@ -32,6 +35,39 @@ def get_rpmlint_error_list(urlrpmlint, project, arch, repo):
     with urllib.request.urlopen(rpmlint_url) as response:
         errors = response.read().decode("utf-8").splitlines()
     return errors
+
+
+# TODO: fix this monstrosity
+def get_package_bugowner_email(package):
+    if package in osc_package_maintainers:
+        print(f"[dict] maintainer of package \"{package}\" is {osc_package_maintainers[package]}")
+        return osc_package_maintainers[package]
+    else:
+        maintainer = ["-"]
+        osc_out = subprocess.run(["osc", "maintainer", "-Be", package],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if osc_out.returncode != 0:  # get maintainer email if no bugowner email
+            osc_out = subprocess.run(["osc", "maintainer", "-e", package],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if osc_out.returncode == 0:
+            maintainer = [mail for mail in osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")]
+
+        if maintainer[0] == "-":
+            osc_out = subprocess.run(["osc", "maintainer", "-B", package],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if osc_out.returncode != 0:  # get maintainer name if no bugowner name
+                osc_out = subprocess.run(["osc", "maintainer", package],
+                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if osc_out.returncode == 0:
+                maintainer = [mail for mail in
+                              osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")]
+
+                print(f"MAINTAINER: \"{maintainer}\"; PACKAGE: \"{package}\"")
+                print(osc_package_maintainers)
+
+        print(f"[_osc] maintainer of package \"{package}\" is {maintainer}")
+        osc_package_maintainers.update({package: maintainer})
+        return maintainer
 
 
 def main(args):
@@ -62,8 +98,6 @@ def main(args):
         config['BuildCheckStatistics_instance']['architecture'],
         config['BuildCheckStatistics_instance']['repository']
     )
-
-
     for error in errors:
         packages = get_rpmlint_package_list(
             config['BuildCheckStatistics_instance']['url'],
@@ -72,9 +106,11 @@ def main(args):
             config['BuildCheckStatistics_instance']['repository'],
             error
             )
+
         package_data = {}
         for package in packages:
-            package_data.update({package: dict(bug_config=dict(owner=config['Bugzilla_instance']['parent_bug_owner'],
+            package_data.update(
+                {package: dict(bug_config=dict(owner=get_package_bugowner_email(package)[0],
                                                product=config['Bugzilla_instance']['parent_bug_product'],
                                                component=config['Bugzilla_instance']['parent_bug_component'],
                                                summary=config['Bugzilla_instance']['parent_bug_summary'],
@@ -114,7 +150,6 @@ if __name__ == '__main__':
     # file-rpmlint-bug --urlrpmlint https://rpmlint.opensuse.org --project openSUSE:Factory --arch x86_64 \
     # --repo standard --username admin --password 1234bugzilla --urlbugzilla https://bugzilla.opensuse.org --bug 23154 \
     # non-standard-group --config config.ini
-
     parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings')
     parser_flags = parser.add_mutually_exclusive_group()
     parser_bugzilla_login = parser.add_argument_group()
