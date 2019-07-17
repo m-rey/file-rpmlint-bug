@@ -11,8 +11,8 @@ import subprocess
 
 __author__ = "Martin Rey <mrey@suse.de>"
 
-
 osc_package_maintainers = {}
+
 
 def bugzilla_init(apiurl, username, password):
     apiurl_split = urllib.parse.urlsplit(apiurl)
@@ -43,31 +43,34 @@ def get_package_bugowner_email(package):
         print(f"[dict] maintainer of package \"{package}\" is {osc_package_maintainers[package]}")
         return osc_package_maintainers[package]
     else:
-        maintainer = ["-"]
+        userlist = ["-"] # default: no users
         osc_out = subprocess.run(["osc", "maintainer", "-Be", package],
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if osc_out.returncode != 0:  # get maintainer email if no bugowner email
             osc_out = subprocess.run(["osc", "maintainer", "-e", package],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if osc_out.returncode == 0:
-            maintainer = [mail for mail in osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")]
+            userlist = [mail for mail in osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")]
 
-        if maintainer[0] == "-":
+        if userlist[0] == "-": # if userlist still has no email addresses, get the names instead
             osc_out = subprocess.run(["osc", "maintainer", "-B", package],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if osc_out.returncode != 0:  # get maintainer name if no bugowner name
                 osc_out = subprocess.run(["osc", "maintainer", package],
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if osc_out.returncode == 0:
-                maintainer = [mail for mail in
+                userlist = [mail for mail in
                               osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")]
 
-                print(f"MAINTAINER: \"{maintainer}\"; PACKAGE: \"{package}\"")
-                print(osc_package_maintainers)
+        if userlist[0] != "-":
+            userlist = [mail for mail in userlist if mail != "-"] # remove any "-" if there is an user entry before "-"
+        else:
+            userlist = ["-"]
 
-        print(f"[_osc] maintainer of package \"{package}\" is {maintainer}")
-        osc_package_maintainers.update({package: maintainer})
-        return maintainer
+        print(f"\n[_osc] maintainer of package \"{package}\" is \"{userlist}\"")
+        print(osc_package_maintainers)
+        osc_package_maintainers.update({package: userlist})
+        return userlist
 
 
 def main(args):
@@ -105,7 +108,7 @@ def main(args):
             config['BuildCheckStatistics_instance']['architecture'],
             config['BuildCheckStatistics_instance']['repository'],
             error
-            )
+        )
 
         package_data = {}
         for package in packages:
@@ -131,7 +134,6 @@ def main(args):
                             )
                 }
 
-
         # data[error]["bug_config"]["owner"] = config["Bugzilla_instance"]["parent_bug_owner"]
         # data[error]["bug_config"]["product"] = config["Bugzilla_instance"]["parent_bug_product"]
         # data[error]["bug_config"]["component"] = config["Bugzilla_instance"]["parent_bug_component"]
@@ -139,7 +141,7 @@ def main(args):
         # data[error]["bug_config"]["version"] = config["Bugzilla_instance"]["parent_bug_version"]
         # data[error]["bug_config"]["description"] = config["Bugzilla_instance"]["parent_bug_description"]
 
-        print(json.dumps(data, indent=4, sort_keys=True))
+        # print(json.dumps(data, indent=4, sort_keys=True))
 
     # bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
     #                       config["Bugzilla_instance"]["login_password"])
