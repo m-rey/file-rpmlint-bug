@@ -2,7 +2,7 @@ import argparse
 import bugzilla
 from configparser import ConfigParser
 import json
-import toml
+import xml.etree.ElementTree as ET
 from os.path import join
 import sys
 import urllib.parse
@@ -11,7 +11,11 @@ import subprocess
 
 __author__ = "Martin Rey <mrey@suse.de>"
 
-osc_package_maintainers = {}
+osc_package_emails = {}
+try:
+    osc_package_emails = json.load(open("osc_package_maintainers.dict"))
+except:
+    pass
 
 
 def bugzilla_init(apiurl, username, password):
@@ -37,40 +41,93 @@ def get_rpmlint_error_list(urlrpmlint, project, arch, repo):
     return errors
 
 
-# TODO: fix this monstrosity
-def get_package_bugowner_email(package):
-    if package in osc_package_maintainers:
-        print(f"[dict] maintainer of package \"{package}\" is {osc_package_maintainers[package]}")
-        return osc_package_maintainers[package]
+def get_emails_from_name(username, name_type="person"):
+    email_list = []
+    osc_out = subprocess.run(['osc', 'api', f'/{name_type}/{username}'], stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
+    if osc_out.returncode == 0:
+        osc_xml = ET.fromstring(osc_out.stdout.decode('utf-8'))
+        email_xml_list = osc_xml.findall("email")
+        email_list.extend([email.text for email in email_xml_list])
+        if (not email_list) and (name_type == "group"):
+            if osc_xml.findall("maintainer"):
+                xml_list = osc_xml.findall("maintainer")
+            else:
+                xml_list = osc_xml.findall("person/person")
+            user_list = [user.get("userid") for user in xml_list]
+            for userid in user_list:
+                email_list.extend(get_emails_from_name(userid, name_type="person"))
+        return email_list
+
+
+def :wq(package):
+    if package in osc_package_emails:
+        print(f"[dict] maintainer of package \"{package}\" is {osc_package_emails[package]}")
+        return osc_package_emails[package]
+
     else:
-        userlist = ["-"] # default: no users
-        osc_out = subprocess.run(["osc", "maintainer", "-Be", package],
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if osc_out.returncode != 0:  # get maintainer email if no bugowner email
-            osc_out = subprocess.run(["osc", "maintainer", "-e", package],
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if osc_out.returncode == 0:
-            userlist = [mail for mail in osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")]
+        email_list = set()
+        package_osc_out = subprocess.run(['osc', 'api', f'/search/owner?binary={package}'],
+                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # get xml result of query
 
-        if userlist[0] == "-": # if userlist still has no email addresses, get the names instead
-            osc_out = subprocess.run(["osc", "maintainer", "-B", package],
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            if osc_out.returncode != 0:  # get maintainer name if no bugowner name
-                osc_out = subprocess.run(["osc", "maintainer", package],
-                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            if osc_out.returncode == 0:
-                userlist = [mail for mail in
-                              osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")]
+        if package_osc_out.returncode == 0:
+            package_osc_xml = ET.fromstring(package_osc_out.stdout.decode('utf-8'))
+            if package_osc_xml.findall("owner/*[@role='bugowner']"):
+                xml_list = package_osc_xml.findall("owner/*[@role='bugowner']")
+            else:
+                xml_list = package_osc_xml.findall("owner/*[@role='maintainer']")
 
-        if userlist[0] != "-":
-            userlist = [mail for mail in userlist if mail != "-"] # remove any "-" if there is an user entry before "-"
-        else:
-            userlist = ["-"]
+            user_name_list = [p.get("name") for p in xml_list if p.tag == "person"]
+            group_name_list = [g.get("name") for g in xml_list if g.tag == "group"]
+            for user in user_name_list:
+                email_list.update(get_emails_from_name(user))
 
-        print(f"\n[_osc] maintainer of package \"{package}\" is \"{userlist}\"")
-        print(osc_package_maintainers)
-        osc_package_maintainers.update({package: userlist})
-        return userlist
+            email_list.update([get_emails_from_name(user) for user in user_name_list
+                               if get_emails_from_name(user) is not None])
+            email_list.update([get_emails_from_name(user, "group") for user in group_name_list
+                               if get_emails_from_name(user, "group") is not None])
+
+            osc_package_emails.update(email_list)
+            return list(email_list)
+
+        #                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # userlist = ["-"]  # default: no users
+        # osc_out = subprocess.run(["osc", "maintainer", "-Be", package],
+        #                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        #
+        # if osc_out.returncode != 0:
+        #     osc_out = subprocess.run(["osc", "maintainer", "-B", package],
+        #                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        #     userlist = osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")
+        #     if
+        #
+        #
+        #
+        # if osc_out.returncode != 0:  # get maintainer email if no bugowner email
+        #     osc_out = subprocess.run(["osc", "maintainer", "-e", package],
+        #                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # if osc_out.returncode == 0:
+        #     userlist = osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")
+        #
+        # # if userlist[0] == "-":  # if userlist still has no email addresses, get the names instead
+        # #     osc_out = subprocess.run(["osc", "maintainer", "-B", package],
+        # #                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # #     if osc_out.returncode != 0:  # get maintainer name if no bugowner name
+        # #         osc_out = subprocess.run(["osc", "maintainer", package],
+        # #                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # #     if osc_out.returncode == 0:
+        # #         userlist = [mail for mail in
+        # #                     osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")]
+        #
+        # if userlist[0] != "-":
+        #     userlist = [mail for mail in userlist if mail != "-"]  # remove any "-" if there is an user entry before "-"
+        # else:
+        #     userlist = [""]
+        #
+        # print(f"[_osc] maintainer of package \"{package}\" is \"{userlist}\"")
+        # osc_package_maintainers.update({package: userlist})
+        # json.dump(osc_package_maintainers, open("osc_package_maintainers.dict", 'w'))
+        return email_list
 
 
 def main(args):
@@ -113,7 +170,7 @@ def main(args):
         package_data = {}
         for package in packages:
             package_data.update(
-                {package: dict(bug_config=dict(owner=get_package_bugowner_email(package)[0],
+                {package: dict(bug_config=dict(owner=get_package_bugowner_emails(package)[0],
                                                product=config['Bugzilla_instance']['parent_bug_product'],
                                                component=config['Bugzilla_instance']['parent_bug_component'],
                                                summary=config['Bugzilla_instance']['parent_bug_summary'],
