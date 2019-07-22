@@ -60,34 +60,42 @@ def get_emails_from_name(username, name_type="person"):
         return email_list
 
 
-def :wq(package):
+def get_package_bugowner_emails(package):
+    print(f"\n[debg] looking up package '{package}'")
     if package in osc_package_emails:
-        print(f"[dict] maintainer of package \"{package}\" is {osc_package_emails[package]}")
+        print(f"[dict] responsible for package \"{package}\" is '{osc_package_emails[package]}'")
         return osc_package_emails[package]
 
     else:
         email_list = set()
+        print(f"[debg] looking up '{package}' in osc...")
         package_osc_out = subprocess.run(['osc', 'api', f'/search/owner?binary={package}'],
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # get xml result of query
-
+        print("[debg] ... loaded")
         if package_osc_out.returncode == 0:
             package_osc_xml = ET.fromstring(package_osc_out.stdout.decode('utf-8'))
             if package_osc_xml.findall("owner/*[@role='bugowner']"):
+                print(f"[debg] package '{package}' has bugowner")
                 xml_list = package_osc_xml.findall("owner/*[@role='bugowner']")
             else:
+                print(f"[debg] package '{package}' has maintainer")
                 xml_list = package_osc_xml.findall("owner/*[@role='maintainer']")
 
             user_name_list = [p.get("name") for p in xml_list if p.tag == "person"]
             group_name_list = [g.get("name") for g in xml_list if g.tag == "group"]
             for user in user_name_list:
+                print(f"[debg] getting email from listed user '{user}'")
                 email_list.update(get_emails_from_name(user))
+                print("[debg] ... loaded")
 
-            email_list.update([get_emails_from_name(user) for user in user_name_list
-                               if get_emails_from_name(user) is not None])
-            email_list.update([get_emails_from_name(user, "group") for user in group_name_list
-                               if get_emails_from_name(user, "group") is not None])
+            for group in group_name_list:
+                print(f"[debg] getting email from listed group '{group}'")
+                email_list.update(get_emails_from_name(group, "group"))
+                print("[debg] ... loaded")
 
-            osc_package_emails.update(email_list)
+            print(f"[_osc] responsible for package \"{package}\" is '{list(email_list)}'")
+            osc_package_emails.update({package: list(email_list)})
+            json.dump(osc_package_emails, open("osc_package_maintainers.dict", 'w'))
             return list(email_list)
 
         #                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -127,7 +135,7 @@ def :wq(package):
         # print(f"[_osc] maintainer of package \"{package}\" is \"{userlist}\"")
         # osc_package_maintainers.update({package: userlist})
         # json.dump(osc_package_maintainers, open("osc_package_maintainers.dict", 'w'))
-        return email_list
+
 
 
 def main(args):
