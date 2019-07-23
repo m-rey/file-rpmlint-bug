@@ -12,11 +12,22 @@ import subprocess
 __author__ = "Martin Rey <mrey@suse.de>"
 
 osc_package_emails = {}
+osc_user_emails = {}
+osc_group_emails = {}
 try:
-    osc_package_emails = json.load(open("osc_package_maintainers.dict"))
+    osc_package_emails = json.load(open("osc_package_emails.dict"))
 except:
     pass
 
+try:
+    osc_user_emails = json.load(open("osc_user_emails.dict"))
+except:
+    pass
+
+try:
+    osc_group_emails = json.load(open("osc_group_emails.dict"))
+except:
+    pass
 
 def bugzilla_init(apiurl, username, password):
     apiurl_split = urllib.parse.urlsplit(apiurl)
@@ -68,34 +79,51 @@ def get_package_bugowner_emails(package):
 
     else:
         email_list = set()
-        print(f"[debg] looking up '{package}' in osc...")
+        print(f"[_osc] looking up '{package}' in osc...")
         package_osc_out = subprocess.run(['osc', 'api', f'/search/owner?binary={package}'],
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # get xml result of query
-        print("[debg] ... loaded")
         if package_osc_out.returncode == 0:
             package_osc_xml = ET.fromstring(package_osc_out.stdout.decode('utf-8'))
             if package_osc_xml.findall("owner/*[@role='bugowner']"):
                 print(f"[debg] package '{package}' has bugowner")
                 xml_list = package_osc_xml.findall("owner/*[@role='bugowner']")
-            else:
+            elif package_osc_xml.findall("owner/*[@role='maintainer']"):
                 print(f"[debg] package '{package}' has maintainer")
                 xml_list = package_osc_xml.findall("owner/*[@role='maintainer']")
+            else:
+                print(f"[!!!!] package '{package}' has no bugowner/maintainer!")
+                return [""]
 
             user_name_list = [p.get("name") for p in xml_list if p.tag == "person"]
             group_name_list = [g.get("name") for g in xml_list if g.tag == "group"]
+
             for user in user_name_list:
-                print(f"[debg] getting email from listed user '{user}'")
-                email_list.update(get_emails_from_name(user))
-                print("[debg] ... loaded")
+                if user in osc_user_emails:
+                    print(f"[dict] getting email from listed user '{user}'")
+                    user_email_list = osc_user_emails[user]
+                else:
+                    print(f"[_osc] getting email from listed user '{user}'")
+                    user_email_list = get_emails_from_name(user)
+                    osc_user_emails.update({user: user_email_list})
+                    json.dump(osc_user_emails, open("osc_user_emails.dict", 'w'))
+
+                email_list.update(user_email_list)
 
             for group in group_name_list:
-                print(f"[debg] getting email from listed group '{group}'")
-                email_list.update(get_emails_from_name(group, "group"))
-                print("[debg] ... loaded")
+                if group in osc_group_emails:
+                    print(f"[dict] getting email from listed group '{group}'")
+                    group_email_list = osc_group_emails[group]
+                else:
+                    print(f"[_osc] getting email from listed group '{group}'")
+                    group_email_list = get_emails_from_name(group, "group")
+                    osc_group_emails.update({group: group_email_list})
+                    json.dump(osc_group_emails, open("osc_group_emails.dict", 'w'))
 
-            print(f"[_osc] responsible for package \"{package}\" is '{list(email_list)}'")
+                email_list.update(group_email_list)
+
+            print(f"[debg] responsible for package \"{package}\" is '{list(email_list)}'")
             osc_package_emails.update({package: list(email_list)})
-            json.dump(osc_package_emails, open("osc_package_maintainers.dict", 'w'))
+            json.dump(osc_package_emails, open("osc_package_emails.dict", 'w'))
             return list(email_list)
 
         #                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
