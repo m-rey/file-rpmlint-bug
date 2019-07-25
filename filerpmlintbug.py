@@ -72,26 +72,26 @@ def get_emails_from_name(username, name_type="person"):
 
 
 def get_package_bugowner_emails(package):
-    print(f"\n[debg] looking up package '{package}'")
+    #print(f"\n[debg] looking up package '{package}'")
     if package in osc_package_emails:
-        print(f"[dict] responsible for package \"{package}\" is '{osc_package_emails[package]}'")
+        #print(f"[dict] responsible for package \"{package}\" is '{osc_package_emails[package]}'")
         return osc_package_emails[package]
 
     else:
         email_list = set()
-        print(f"[_osc] looking up '{package}' in osc...")
+        #print(f"[_osc] looking up '{package}' in osc...")
         package_osc_out = subprocess.run(['osc', 'api', f'/search/owner?binary={package}'],
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # get xml result of query
         if package_osc_out.returncode == 0:
             package_osc_xml = ET.fromstring(package_osc_out.stdout.decode('utf-8'))
             if package_osc_xml.findall("owner/*[@role='bugowner']"):
-                print(f"[debg] package '{package}' has bugowner")
+                #print(f"[debg] package '{package}' has bugowner")
                 xml_list = package_osc_xml.findall("owner/*[@role='bugowner']")
             elif package_osc_xml.findall("owner/*[@role='maintainer']"):
-                print(f"[debg] package '{package}' has maintainer")
+                #print(f"[debg] package '{package}' has maintainer")
                 xml_list = package_osc_xml.findall("owner/*[@role='maintainer']")
             else:
-                print(f"[!!!!] package '{package}' has no bugowner/maintainer!")
+                #print(f"[!!!!] package '{package}' has no bugowner/maintainer!")
                 return [""]
 
             user_name_list = [p.get("name") for p in xml_list if p.tag == "person"]
@@ -99,10 +99,10 @@ def get_package_bugowner_emails(package):
 
             for user in user_name_list:
                 if user in osc_user_emails:
-                    print(f"[dict] getting email from listed user '{user}'")
+                    #print(f"[dict] getting email from listed user '{user}'")
                     user_email_list = osc_user_emails[user]
                 else:
-                    print(f"[_osc] getting email from listed user '{user}'")
+                    #print(f"[_osc] getting email from listed user '{user}'")
                     user_email_list = get_emails_from_name(user)
                     osc_user_emails.update({user: user_email_list})
                     json.dump(osc_user_emails, open("osc_user_emails.dict", 'w'))
@@ -111,82 +111,40 @@ def get_package_bugowner_emails(package):
 
             for group in group_name_list:
                 if group in osc_group_emails:
-                    print(f"[dict] getting email from listed group '{group}'")
+                    #print(f"[dict] getting email from listed group '{group}'")
                     group_email_list = osc_group_emails[group]
                 else:
-                    print(f"[_osc] getting email from listed group '{group}'")
+                    #print(f"[_osc] getting email from listed group '{group}'")
                     group_email_list = get_emails_from_name(group, "group")
                     osc_group_emails.update({group: group_email_list})
                     json.dump(osc_group_emails, open("osc_group_emails.dict", 'w'))
 
                 email_list.update(group_email_list)
 
-            print(f"[debg] responsible for package \"{package}\" is '{list(email_list)}'")
+            #print(f"[debg] responsible for package \"{package}\" is '{list(email_list)}'")
             osc_package_emails.update({package: list(email_list)})
             json.dump(osc_package_emails, open("osc_package_emails.dict", 'w'))
             return list(email_list)
 
-        #                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # userlist = ["-"]  # default: no users
-        # osc_out = subprocess.run(["osc", "maintainer", "-Be", package],
-        #                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        #
-        # if osc_out.returncode != 0:
-        #     osc_out = subprocess.run(["osc", "maintainer", "-B", package],
-        #                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        #     userlist = osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")
-        #     if
-        #
-        #
-        #
-        # if osc_out.returncode != 0:  # get maintainer email if no bugowner email
-        #     osc_out = subprocess.run(["osc", "maintainer", "-e", package],
-        #                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # if osc_out.returncode == 0:
-        #     userlist = osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")
-        #
-        # # if userlist[0] == "-":  # if userlist still has no email addresses, get the names instead
-        # #     osc_out = subprocess.run(["osc", "maintainer", "-B", package],
-        # #                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # #     if osc_out.returncode != 0:  # get maintainer name if no bugowner name
-        # #         osc_out = subprocess.run(["osc", "maintainer", package],
-        # #                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # #     if osc_out.returncode == 0:
-        # #         userlist = [mail for mail in
-        # #                     osc_out.stdout.decode('utf-8').strip().splitlines()[-1].strip().split(", ")]
-        #
-        # if userlist[0] != "-":
-        #     userlist = [mail for mail in userlist if mail != "-"]  # remove any "-" if there is an user entry before "-"
-        # else:
-        #     userlist = [""]
-        #
-        # print(f"[_osc] maintainer of package \"{package}\" is \"{userlist}\"")
-        # osc_package_maintainers.update({package: userlist})
-        # json.dump(osc_package_maintainers, open("osc_package_maintainers.dict", 'w'))
 
-
-
-def main(args):
+def main(arguments):
     config = ConfigParser()
-    if args.config:
-        config.read(args.config)
+    config.read(arguments.config)
 
-    if args.urlrpmlint is not None:
-        config['BuildCheckStatistics_instance']['url'] = args.urlrpmlint
-    if args.project is not None:
-        config['BuildCheckStatistics_instance']['project'] = args.project
-    if args.arch is not None:
-        config['BuildCheckStatistics_instance']['architecture'] = args.arch
-    if args.repo is not None:
-        config['BuildCheckStatistics_instance']['repository'] = args.repo
-    if args.urlbugzilla is not None:
-        config['Bugzilla_instance']['url'] = args.urlbugzilla
-    if args.username is not None:
-        config['Bugzilla_instance']['login_username'] = args.username
-    if args.password is not None:
-        config['Bugzilla_instance']['login_password'] = args.password
-    if args.bug is not None:
-        config['Bugzilla_bug']['blocks'] = str(args.bug)
+    # if args.urlrpmlint is not None:
+    #     config['BuildCheckStatistics_instance']['url'] = args.urlrpmlint
+    # if args.project is not None:
+    #     config['BuildCheckStatistics_instance']['project'] = args.project
+    # if args.arch is not None:
+    #     config['BuildCheckStatistics_instance']['architecture'] = args.arch
+    # if args.repo is not None:
+    #     config['BuildCheckStatistics_instance']['repository'] = args.repo
+    # if args.urlbugzilla is not None:
+    #     config['Bugzilla_instance']['url'] = args.urlbugzilla
+    # if args.username is not None:
+    #     config['Bugzilla_instance']['login_username'] = args.username
+    # if args.password is not None:
+    #     config['Bugzilla_instance']['login_password'] = args.password
 
     errors = get_rpmlint_error_list(
         config['BuildCheckStatistics_instance']['url'],
@@ -205,23 +163,26 @@ def main(args):
 
         package_data = {}
         for package in packages:
+            package_emails = get_package_bugowner_emails(package)
             package_data.update(
-                {package: dict(bug_config=dict(owner=get_package_bugowner_emails(package)[0],
-                                               product=config['Bugzilla_instance']['parent_bug_product'],
-                                               component=config['Bugzilla_instance']['parent_bug_component'],
-                                               summary=config['Bugzilla_instance']['parent_bug_summary'],
-                                               version=config['Bugzilla_instance']['parent_bug_version'],
-                                               description=config['Bugzilla_instance']['parent_bug_description'],
-                                               bug_id=''
+                {package: dict(bug_config=dict(assigned_to=package_emails[0],
+                                               cc=package_emails[1:],
+                                               product=config['Bugzilla_instance']['bug_product'],
+                                               component=config['Bugzilla_instance']['bug_component'],
+                                               version=config['Bugzilla_instance']['bug_version'],
+                                               summary=config['Bugzilla_instance']['package_bug_summary'],
+                                               description=config['Bugzilla_instance']['package_bug_description'],
+                                               id=''
                                                ))})
 
-        data = {error: dict(bug_config=dict(owner=config['Bugzilla_instance']['parent_bug_owner'],
-                                            product=config['Bugzilla_instance']['parent_bug_product'],
-                                            component=config['Bugzilla_instance']['parent_bug_component'],
+        data = {error: dict(bug_config=dict(assigned_to=config['Bugzilla_instance']['parent_bug_owner'],
+                                            cc=config['Bugzilla_instance']['parent_bug_cc'],
+                                            product=config['Bugzilla_instance']['bug_product'],
+                                            component=config['Bugzilla_instance']['bug_component'],
+                                            version=config['Bugzilla_instance']['bug_version'],
                                             summary=config['Bugzilla_instance']['parent_bug_summary'],
-                                            version=config['Bugzilla_instance']['parent_bug_version'],
                                             description=config['Bugzilla_instance']['parent_bug_description'],
-                                            bug_id=''
+                                            id=''
                                             ),
                             packages=package_data
                             )
@@ -234,7 +195,7 @@ def main(args):
         # data[error]["bug_config"]["version"] = config["Bugzilla_instance"]["parent_bug_version"]
         # data[error]["bug_config"]["description"] = config["Bugzilla_instance"]["parent_bug_description"]
 
-        # print(json.dumps(data, indent=4, sort_keys=True))
+        print(json.dumps(data, indent=4, sort_keys=True))
 
     # bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
     #                       config["Bugzilla_instance"]["login_password"])
@@ -247,20 +208,20 @@ if __name__ == '__main__':
     # non-standard-group --config config.ini
     parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings')
     parser_flags = parser.add_mutually_exclusive_group()
-    parser_bugzilla_login = parser.add_argument_group()
-    parser.add_argument("rpmlint_error", metavar="ERRORTYPE", help="rpmlint error type to create bug reports for")
+    #parser_bugzilla_login = parser.add_argument_group()
+    parser.add_argument("config", metavar="CONFIG_FILE", help="configuration file with settings")
     parser_flags.add_argument("-v", "--verbosity", help="increase output verbosity", action="count", default=0)
     parser_flags.add_argument("-q", "--quiet", help="try to be as quiet as possible", action="store_true")
-    parser.add_argument("--urlrpmlint", metavar="BCS_INSTANCE", help="URL of BuildCheckStatistics (rpmlint) instance")
-    parser.add_argument("-p", "--project", help="name of project")
-    parser.add_argument("-a", "--arch", metavar="ARCHITECTURE", help="architecture type")
-    parser.add_argument("-r", "--repo", metavar="REPOSITORY", help="name of repository")
-    parser.add_argument("--urlbugzilla", metavar="BUGZILLA_INSTANCE", help="URL of bugzilla instance")
-    parser_bugzilla_login.add_argument("--username", help="username for bugzilla instance")
-    parser_bugzilla_login.add_argument("--password", help="password for bugzilla instance")
-    parser.add_argument("-b", "--bug", help="bugzilla parent bug id for generated bug reports", type=int)
-    parser.add_argument("-c", "--config", metavar="CONFIG_FILE", help="configuration file with further settings;"
-                                                                      " passed arguments will overwrite config")
+    #parser.add_argument("--urlrpmlint", metavar="BCS_INSTANCE", help="URL of BuildCheckStatistics (rpmlint) instance")
+    #parser.add_argument("-p", "--project", help="name of project")
+    #parser.add_argument("-a", "--arch", metavar="ARCHITECTURE", help="architecture type")
+    #parser.add_argument("-r", "--repo", metavar="REPOSITORY", help="name of repository")
+    #parser.add_argument("--urlbugzilla", metavar="BUGZILLA_INSTANCE", help="URL of bugzilla instance")
+    #parser_bugzilla_login.add_argument("--username", help="username for bugzilla instance")
+    #parser_bugzilla_login.add_argument("--password", help="password for bugzilla instance")
+    #parser.add_argument("-b", "--bug", help="bugzilla parent bug id for generated bug reports", type=int)
+    parser.add_argument("--no-email-cache", help="don't use cached emails", action="store_true")
+    parser.add_argument("--remove-email-cache", help="don't use cached emails", action="store_true")
 
     args = parser.parse_args()
     sys.exit(main(args))
