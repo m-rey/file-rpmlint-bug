@@ -175,7 +175,7 @@ def main(arguments):
                                                id=''
                                                ))})
 
-        data = {error: dict(bug_config=dict(assigned_to=config['Bugzilla_instance']['parent_bug_owner'],
+        data = {error: dict(bug_config=dict(assigned_to=config['Bugzilla_instance']['parent_bug_assigned_to'],
                                             cc=config['Bugzilla_instance']['parent_bug_cc'],
                                             product=config['Bugzilla_instance']['bug_product'],
                                             component=config['Bugzilla_instance']['bug_component'],
