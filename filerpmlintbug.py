@@ -3,7 +3,7 @@ import bugzilla
 from configparser import ConfigParser
 import json
 import xml.etree.ElementTree as ET
-from os.path import join
+from os import path, scandir, unlink
 import sys
 import urllib.parse
 import urllib.request
@@ -14,20 +14,7 @@ __author__ = "Martin Rey <mrey@suse.de>"
 osc_package_emails = {}
 osc_user_emails = {}
 osc_group_emails = {}
-try:
-    osc_package_emails = json.load(open("osc_package_emails.dict"))
-except:
-    pass
 
-try:
-    osc_user_emails = json.load(open("osc_user_emails.dict"))
-except:
-    pass
-
-try:
-    osc_group_emails = json.load(open("osc_group_emails.dict"))
-except:
-    pass
 
 def bugzilla_init(apiurl, username, password):
     apiurl_split = urllib.parse.urlsplit(apiurl)
@@ -39,14 +26,14 @@ def bugzilla_init(apiurl, username, password):
 
 
 def get_rpmlint_package_list(urlrpmlint, project, arch, repo, rpmlint_error):
-    rpmlint_url = join(urlrpmlint, project, arch, repo + "?rule=" + rpmlint_error + "&format=txt")
+    rpmlint_url = path.join(urlrpmlint, project, arch, repo + "?rule=" + rpmlint_error + "&format=txt")
     with urllib.request.urlopen(rpmlint_url) as response:
         packages = response.read().decode("utf-8").splitlines()
     return packages
 
 
 def get_rpmlint_error_list(urlrpmlint, project, arch, repo):
-    rpmlint_url = join(urlrpmlint, "rules", project, arch, repo + "?format=txt")
+    rpmlint_url = path.join(urlrpmlint, "rules", project, arch, repo + "?format=txt")
     with urllib.request.urlopen(rpmlint_url) as response:
         errors = response.read().decode("utf-8").splitlines()
     return errors
@@ -105,7 +92,8 @@ def get_package_bugowner_emails(package):
                     #print(f"[_osc] getting email from listed user '{user}'")
                     user_email_list = get_emails_from_name(user)
                     osc_user_emails.update({user: user_email_list})
-                    json.dump(osc_user_emails, open("osc_user_emails.dict", 'w'))
+                    if not args.nocache:
+                        json.dump(osc_user_emails, open("osc_user_emails.cache", 'w'))
 
                 email_list.update(user_email_list)
 
@@ -117,34 +105,47 @@ def get_package_bugowner_emails(package):
                     #print(f"[_osc] getting email from listed group '{group}'")
                     group_email_list = get_emails_from_name(group, "group")
                     osc_group_emails.update({group: group_email_list})
-                    json.dump(osc_group_emails, open("osc_group_emails.dict", 'w'))
+                    if not args.nocache:
+                        json.dump(osc_group_emails, open("osc_group_emails.cache", 'w'))
 
                 email_list.update(group_email_list)
 
             #print(f"[debg] responsible for package \"{package}\" is '{list(email_list)}'")
             osc_package_emails.update({package: list(email_list)})
-            json.dump(osc_package_emails, open("osc_package_emails.dict", 'w'))
+            if not args.nocache:
+                json.dump(osc_package_emails, open("osc_package_emails.cache", 'w'))
             return list(email_list)
 
 
-def main(arguments):
-    config = ConfigParser()
-    config.read(arguments.config)
+def main(config):
+    global osc_package_emails
+    global osc_user_emails
+    global osc_group_emails
 
-    # if args.urlrpmlint is not None:
-    #     config['BuildCheckStatistics_instance']['url'] = args.urlrpmlint
-    # if args.project is not None:
-    #     config['BuildCheckStatistics_instance']['project'] = args.project
-    # if args.arch is not None:
-    #     config['BuildCheckStatistics_instance']['architecture'] = args.arch
-    # if args.repo is not None:
-    #     config['BuildCheckStatistics_instance']['repository'] = args.repo
-    # if args.urlbugzilla is not None:
-    #     config['Bugzilla_instance']['url'] = args.urlbugzilla
-    # if args.username is not None:
-    #     config['Bugzilla_instance']['login_username'] = args.username
-    # if args.password is not None:
-    #     config['Bugzilla_instance']['login_password'] = args.password
+    if args.removecache:
+        #print("[debg] remove cache...")
+        for file in scandir(path.dirname(path.abspath(sys.argv[0]))):
+            if file.name.endswith(".cache"):
+                unlink(file.path)
+                #print(f"[debg] removed {file.name}")
+
+    if not args.nocache:
+        try:
+            osc_package_emails = json.load(open("osc_package_emails.cache"))
+        except IOError:
+            osc_package_emails = {}
+
+        try:
+            osc_user_emails = json.load(open("osc_user_emails.cache"))
+        except IOError:
+            osc_user_emails = {}
+
+        try:
+            osc_group_emails = json.load(open("osc_group_emails.cache"))
+        except IOError:
+            osc_group_emails = {}
+    else:
+        #print("[debg] not using cache because of --nocache flag")
 
     errors = get_rpmlint_error_list(
         config['BuildCheckStatistics_instance']['url'],
@@ -188,14 +189,7 @@ def main(arguments):
                             )
                 }
 
-        # data[error]["bug_config"]["owner"] = config["Bugzilla_instance"]["parent_bug_owner"]
-        # data[error]["bug_config"]["product"] = config["Bugzilla_instance"]["parent_bug_product"]
-        # data[error]["bug_config"]["component"] = config["Bugzilla_instance"]["parent_bug_component"]
-        # data[error]["bug_config"]["summary"] = config["Bugzilla_instance"]["parent_bug_summary"]
-        # data[error]["bug_config"]["version"] = config["Bugzilla_instance"]["parent_bug_version"]
-        # data[error]["bug_config"]["description"] = config["Bugzilla_instance"]["parent_bug_description"]
-
-        print(json.dumps(data, indent=4, sort_keys=True))
+        #print(json.dumps(data, indent=4, sort_keys=True))
 
     # bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
     #                       config["Bugzilla_instance"]["login_password"])
@@ -203,25 +197,18 @@ def main(arguments):
 
 
 if __name__ == '__main__':
-    # file-rpmlint-bug --urlrpmlint https://rpmlint.opensuse.org --project openSUSE:Factory --arch x86_64 \
-    # --repo standard --username admin --password 1234bugzilla --urlbugzilla https://bugzilla.opensuse.org --bug 23154 \
-    # non-standard-group --config config.ini
+    # file-rpmlint-bug config.ini
     parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings')
     parser_flags = parser.add_mutually_exclusive_group()
-    #parser_bugzilla_login = parser.add_argument_group()
-    parser.add_argument("config", metavar="CONFIG_FILE", help="configuration file with settings")
+
     parser_flags.add_argument("-v", "--verbosity", help="increase output verbosity", action="count", default=0)
     parser_flags.add_argument("-q", "--quiet", help="try to be as quiet as possible", action="store_true")
-    #parser.add_argument("--urlrpmlint", metavar="BCS_INSTANCE", help="URL of BuildCheckStatistics (rpmlint) instance")
-    #parser.add_argument("-p", "--project", help="name of project")
-    #parser.add_argument("-a", "--arch", metavar="ARCHITECTURE", help="architecture type")
-    #parser.add_argument("-r", "--repo", metavar="REPOSITORY", help="name of repository")
-    #parser.add_argument("--urlbugzilla", metavar="BUGZILLA_INSTANCE", help="URL of bugzilla instance")
-    #parser_bugzilla_login.add_argument("--username", help="username for bugzilla instance")
-    #parser_bugzilla_login.add_argument("--password", help="password for bugzilla instance")
-    #parser.add_argument("-b", "--bug", help="bugzilla parent bug id for generated bug reports", type=int)
-    parser.add_argument("--no-email-cache", help="don't use cached emails", action="store_true")
-    parser.add_argument("--remove-email-cache", help="don't use cached emails", action="store_true")
+    parser.add_argument("config", metavar="CONFIG_FILE", help="configuration file with settings")
+    parser.add_argument("--nocache", help="don't use cached emails", action="store_true")
+    parser.add_argument("--removecache", help="remove cached emails", action="store_true")
 
     args = parser.parse_args()
-    sys.exit(main(args))
+    configparser = ConfigParser()
+    configparser.read(args.config)
+
+    sys.exit(main(configparser))
