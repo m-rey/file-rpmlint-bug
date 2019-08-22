@@ -194,13 +194,14 @@ def pull(config):
 
         with open(args.out, 'w') as outfile:
             json.dump(error_data, outfile)
-        print(f"DUMP TO {outfile.name}")
+        print(f"[dump] save data to file {args.out}")
 
 
 
 def push(config):
     bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
                           config["Bugzilla_instance"]["login_password"])
+
     bug_create_info = bzapi.build_createbug()
 
 
@@ -212,7 +213,7 @@ def main(config):
 
 
 if __name__ == '__main__':
-    # file-rpmlint-bug config.ini -o output.json
+    # file-rpmlint-bug --pull config.ini -o data.json
     parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings in 2 steps.')
     parser_flags = parser.add_mutually_exclusive_group()
     parser_operation = parser.add_mutually_exclusive_group()
