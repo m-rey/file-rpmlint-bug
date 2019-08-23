@@ -148,8 +148,8 @@ def pull(config):
     else:
         print("[debg] not using cache because of --nocache flag")
 
-    if path.isfile(args.out):
-            remove(args.out)
+    if path.isfile(args.file):
+            remove(args.file)
 
     errors = get_rpmlint_error_list(
         config['BuildCheckStatistics_instance']['url'],
@@ -192,9 +192,9 @@ def pull(config):
                                          id=''),
                          packages=package_data)})
 
-        with open(args.out, 'w') as outfile:
+        with open(args.file, 'w') as outfile:
             json.dump(error_data, outfile)
-        print(f"[dump] save data to file {args.out}")
+        print(f"[dump] save data to file {args.file}")
 
 
 
@@ -202,7 +202,22 @@ def push(config):
     bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
                           config["Bugzilla_instance"]["login_password"])
 
-    bug_create_info = bzapi.build_createbug()
+    #TODO: get first entry in json file with no bug id
+
+
+    #TODO: get bug info and add it here
+    createinfo = bzapi.build_createbug(
+        assigned_to="",
+        cc="",
+        product="",
+        component="",
+        version="",
+        summary="",
+        description="")
+
+    newbug = bzapi.createbug(createinfo)
+
+    # TODO: save bug id in json file
 
 
 def main(config):
@@ -213,7 +228,7 @@ def main(config):
 
 
 if __name__ == '__main__':
-    # file-rpmlint-bug --pull config.ini -o data.json
+    # file-rpmlint-bug --pull -c config.ini  data.json
     parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings in 2 steps.')
     parser_flags = parser.add_mutually_exclusive_group()
     parser_operation = parser.add_mutually_exclusive_group()
@@ -223,8 +238,8 @@ if __name__ == '__main__':
                                   dest="operation", action="store_const", const="pull")
     parser_operation.add_argument("--push", help="push information from data file to bugzilla", dest="operation",
                                   action="store_const", const="push")
-    parser.add_argument("config", metavar="CONFIG_FILE", help="configuration file with settings")
-    parser.add_argument("-o", "--out", help="filename of output json, defaults to output.json", default="data.json")
+    parser.add_argument("--config", "-c", metavar="CONFIG_FILE", help="configuration file with settings")
+    parser.add_argument("file", metavar="JSON_FILE", help="filename of JSON data file to use")
     parser.add_argument("--nocache", help="don't use cached emails", action="store_true")
     parser.add_argument("--removecache", help="remove cached emails", action="store_true")
 
