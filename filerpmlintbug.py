@@ -202,22 +202,27 @@ def push(config):
     bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
                           config["Bugzilla_instance"]["login_password"])
 
-    #TODO: get first entry in json file with no bug id
+    with open(args.file) as jsonfile:
+        data = json.load(jsonfile)
 
+        # get first entry in json file with no bug id
+        for parent_error in data:
+            if not data[parent_error]["bug_config"]["id"]:
+                # get bug info and add it here
+                createinfo = bzapi.build_createbug(
+                    assigned_to=data[parent_error]["bug_config"]["assigned_to"],
+                    cc=data[parent_error]["bug_config"]["cc"],
+                    product=data[parent_error]["bug_config"]["product"],
+                    component=data[parent_error]["bug_config"]["component"],
+                    version=data[parent_error]["bug_config"]["version"],
+                    summary=data[parent_error]["bug_config"]["summary"],
+                    description=data[parent_error]["bug_config"]["description"])
+                print(createinfo)  # TODO: remove this debug message
+                created_parent_bug = bzapi.createbug(createinfo)
+                data[parent_error]["bug_config"]["id"] = created_parent_bug.id
+                json.dump(data, jsonfile)
 
-    #TODO: get bug info and add it here
-    createinfo = bzapi.build_createbug(
-        assigned_to="",
-        cc="",
-        product="",
-        component="",
-        version="",
-        summary="",
-        description="")
-
-    newbug = bzapi.createbug(createinfo)
-
-    # TODO: save bug id in json file
+    # TODO: create child bugs and add parent bug id to "blocks="
 
 
 def main(config):

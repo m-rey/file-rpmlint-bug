@@ -2,4 +2,4 @@ argparse
 bugzilla
 requests
 urllib3
-untangle
+jinja2
