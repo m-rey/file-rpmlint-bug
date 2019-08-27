@@ -221,8 +221,6 @@ def push(config):
                 data[parent_error]["bug_config"]["id"] = created_parent_bug.id
                 json.dump(data, jsonfile)
 
-
-        for parent_error in data:
             for package in data[parent_error]["packages"]:
                 if not data[parent_error]["packages"][package]["bug_config"]["id"]:
 
@@ -238,7 +236,6 @@ def push(config):
                     created_child_bug = bzapi.createbug(child_bug_createinfo)
                     data[parent_error]["packages"][package]["bug_config"]["id"] = created_child_bug.id
                     json.dump(data, jsonfile)
-
 
 def main(config):
     if args.operation == "pull":
