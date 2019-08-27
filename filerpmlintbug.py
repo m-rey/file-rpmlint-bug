@@ -205,11 +205,11 @@ def push(config):
     with open(args.file) as jsonfile:
         data = json.load(jsonfile)
 
-        # get first entry in json file with no bug id
+        # go through error types and create parent bugs if they don't already exist
         for parent_error in data:
             if not data[parent_error]["bug_config"]["id"]:
-                # get bug info and add it here
-                createinfo = bzapi.build_createbug(
+
+                parent_bug_createinfo = bzapi.build_createbug(
                     assigned_to=data[parent_error]["bug_config"]["assigned_to"],
                     cc=data[parent_error]["bug_config"]["cc"],
                     product=data[parent_error]["bug_config"]["product"],
@@ -217,12 +217,27 @@ def push(config):
                     version=data[parent_error]["bug_config"]["version"],
                     summary=data[parent_error]["bug_config"]["summary"],
                     description=data[parent_error]["bug_config"]["description"])
-                print(createinfo)  # TODO: remove this debug message
-                created_parent_bug = bzapi.createbug(createinfo)
+                created_parent_bug = bzapi.createbug(parent_bug_createinfo)
                 data[parent_error]["bug_config"]["id"] = created_parent_bug.id
                 json.dump(data, jsonfile)
 
-    # TODO: create child bugs and add parent bug id to "blocks="
+
+        for parent_error in data:
+            for package in data[parent_error]["packages"]:
+                if not data[parent_error]["packages"][package]["bug_config"]["id"]:
+
+                    child_bug_createinfo = bzapi.build_createbug(
+                        assigned_to=data[parent_error]["packages"][package]["bug_config"]["assigned_to"],
+                        cc=data[parent_error]["packages"][package]["bug_config"]["cc"],
+                        product=data[parent_error]["packages"][package]["bug_config"]["product"],
+                        component=data[parent_error]["packages"][package]["bug_config"]["component"],
+                        version=data[parent_error]["packages"][package]["bug_config"]["version"],
+                        summary=data[parent_error]["packages"][package]["bug_config"]["summary"],
+                        description=data[parent_error]["packages"][package]["bug_config"]["description"],
+                        blocks=data[parent_error]["bug_config"]["id"])
+                    created_child_bug = bzapi.createbug(child_bug_createinfo)
+                    data[parent_error]["packages"][package]["bug_config"]["id"] = created_child_bug.id
+                    json.dump(data, jsonfile)
 
 
 def main(config):
@@ -233,7 +248,7 @@ def main(config):
 
 
 if __name__ == '__main__':
-    # file-rpmlint-bug --pull -c config.ini  data.json
+    # file-rpmlint-bug --pull -c config.ini data.json
     parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings in 2 steps.')
     parser_flags = parser.add_mutually_exclusive_group()
     parser_operation = parser.add_mutually_exclusive_group()
