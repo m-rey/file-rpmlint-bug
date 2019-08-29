@@ -1,21 +1,55 @@
+# coding=utf-8
 import argparse
-import bugzilla
-from configparser import ConfigParser
 import json
 import logging
-from os import path, scandir, remove
 import subprocess
 import sys
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
+from configparser import ConfigParser
+from os import path, remove, scandir
+from string import Template
+from xml.etree.ElementTree import fromstring
+
+import bugzilla
 
 __author__ = "Martin Rey <mrey@suse.de>"
 
 osc_package_emails = {}
 osc_user_emails = {}
 osc_group_emails = {}
-logging.basicConfig(level=logging.INFO)
+packages_without_bugowner = set()
+
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+log = logging.getLogger()
+
+# file-rpmlint-bug --pull -c config.ini data.json
+parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings in 2 steps.')
+parser_flags = parser.add_mutually_exclusive_group()
+parser_operation = parser.add_mutually_exclusive_group()
+parser_flags.add_argument("-v", "--verbosity", help="increase output verbosity (-v, -vv, -vvv)",
+                          action="count", default=0)
+parser_operation.add_argument("--pull", help="pull information from relevant sources to generate data file",
+                              dest="operation", action="store_const", const="pull")
+parser_operation.add_argument("--push", help="push information from data file to bugzilla", dest="operation",
+                              action="store_const", const="push")
+parser.add_argument("--config", "-c", metavar="CONFIG_FILE", help="configuration file with settings")
+parser.add_argument("file", metavar="JSON_FILE", help="filename of JSON data file to use")
+parser.add_argument("--nocache", help="don't use cached package:email dictionary", action="store_true")
+parser.add_argument("--removecache", help="remove cached package:email dictionary", action="store_true")
+parser_operation.set_defaults(operation="pull")
+
+
+def set_verbosity(args):
+    if not args.verbosity:
+       log.setLevel(logging.ERROR)
+    elif args.verbosity == 1:
+        log.setLevel(logging.WARNING)
+    elif args.verbosity == 2:
+        log.setLevel(logging.INFO)
+    elif args.verbosity >= 3:
+        log.setLevel(logging.DEBUG)
 
 
 def bugzilla_init(apiurl, username, password):
@@ -46,7 +80,7 @@ def get_emails_from_name(username, name_type="person"):
     osc_out = subprocess.run(['osc', 'api', f'/{name_type}/{username}'], stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
     if osc_out.returncode == 0:
-        osc_xml = ET.fromstring(osc_out.stdout.decode('utf-8'))
+        osc_xml = fromstring(osc_out.stdout.decode('utf-8'))
         email_xml_list = osc_xml.findall("email")
         email_list.extend([email.text for email in email_xml_list])
         if (not email_list) and (name_type == "group"):
@@ -61,27 +95,31 @@ def get_emails_from_name(username, name_type="person"):
 
 
 def get_package_bugowner_emails(package):
-    logging.info(f"looking up package '{package}'")
+    log.debug(f"looking up package '{package}'")
     if package in osc_package_emails:
-        logging.debug(f"package '{package}' is in cache")
-        logging.debug(f"'{osc_package_emails[package]}' is responsible for package '{package}'")
+        log.debug(f"package '{package}' is in cache")
+        log.debug(f"'{osc_package_emails[package]}' is responsible for package '{package}'")
         return osc_package_emails[package]
-
+    elif package in packages_without_bugowner:
+        log.warning(f"package '{package}' is in cache, but has no bugowner/maintainer!")
+        return [""]
     else:
         email_list = set()
-        logging.debug(f"looking up package '{package}' using osc")
+        log.debug(f"looking up package '{package}' using osc")
         package_osc_out = subprocess.run(['osc', 'api', f'/search/owner?binary={package}'],
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)  # get xml result of query
         if package_osc_out.returncode == 0:
-            package_osc_xml = ET.fromstring(package_osc_out.stdout.decode('utf-8'))
+            package_osc_xml = fromstring(package_osc_out.stdout.decode('utf-8'))
             if package_osc_xml.findall("owner/*[@role='bugowner']"):
-                logging.debug(f"package '{package}' has bugowner")
+                log.debug(f"package '{package}' has bugowner")
                 xml_list = package_osc_xml.findall("owner/*[@role='bugowner']")
             elif package_osc_xml.findall("owner/*[@role='maintainer']"):
-                logging.debug(f"package '{package}' has maintainer")
+                log.debug(f"package '{package}' has maintainer")
                 xml_list = package_osc_xml.findall("owner/*[@role='maintainer']")
             else:
-                logging.warning(f"package '{package}' has no bugowner/maintainer!")
+                log.warning(f"package '{package}' has no bugowner/maintainer!")
+                log.debug(f"adding '{package}' to cache")
+                packages_without_bugowner.add(package)
                 return [""]
 
             user_name_list = [p.get("name") for p in xml_list if p.tag == "person"]
@@ -89,79 +127,81 @@ def get_package_bugowner_emails(package):
 
             for user in user_name_list:
                 if user in osc_user_emails:
-                    logging.debug(f"user '{user}' is in cache")
-                    logging.debug(f"getting email from user '{user}'")
+                    log.debug(f"user '{user}' is in cache")
+                    log.debug(f"getting email from user '{user}'")
                     user_email_list = osc_user_emails[user]
                 else:
-                    logging.debug(f"getting email from user '{user}' using osc")
+                    log.debug(f"getting email from user '{user}' using osc")
                     user_email_list = get_emails_from_name(user)
                     osc_user_emails.update({user: user_email_list})
                     if not args.nocache:
                         with open("osc_user_emails.cache", "w") as osc_user_emails_file:
-                            logging.debug(f"saving data to cache file '{osc_user_emails_file.name}'")
+                            log.debug(f"saving data to cache file '{osc_user_emails_file.name}'")
                             json.dump(osc_user_emails, osc_user_emails_file)
                 email_list.update(user_email_list)
 
             for group in group_name_list:
                 if group in osc_group_emails:
-                    logging.debug(f"group '{group}' is in cache")
-                    logging.debug(f"getting email from group '{group}'")
+                    log.debug(f"group '{group}' is in cache")
+                    log.debug(f"getting email from group '{group}'")
                     group_email_list = osc_group_emails[group]
                 else:
-                    logging.debug(f"getting email from group '{group}' using osc")
+                    log.debug(f"getting email from group '{group}' using osc")
                     group_email_list = get_emails_from_name(group, "group")
                     osc_group_emails.update({group: group_email_list})
                     if not args.nocache:
                         with open("osc_group_emails.cache", "w") as osc_group_emails_file:
-                            logging.debug(f"saving data to cache file '{osc_group_emails_file.name}'")
+                            log.debug(f"saving data to cache file '{osc_group_emails_file.name}'")
                             json.dump(osc_group_emails, osc_group_emails_file)
                 email_list.update(group_email_list)
 
-            logging.info(f"'{list(email_list)}' is responsible for package '{package}'")
+            log.debug(f"'{list(email_list)}' is responsible for package '{package}'")
             osc_package_emails.update({package: list(email_list)})
             if not args.nocache:
                 with open("osc_package_emails.cache", "w") as osc_package_emails_file:
-                    logging.debug(f"saving data to cache file '{osc_package_emails_file.name}'")
+                    log.debug(f"saving data to cache file '{osc_package_emails_file.name}'")
                     json.dump(osc_package_emails, osc_package_emails_file)
             return list(email_list)
 
 
-def pull(config):
+def pull(template):
     global osc_package_emails
     global osc_user_emails
     global osc_group_emails
-
+    
+    config = ConfigParser(interpolation=None)
+    config.read_string(template.template)
     # adapt program based on given flags
     if args.removecache:
-        logging.debug("removing cache")
+        log.debug("removing cache")
         for file in scandir(path.dirname(path.abspath(sys.argv[0]))):
             if file.name.endswith(".cache"):
                 remove(file.path)
-                logging.debug(f"'{file.name}' removed")
+                log.debug(f"'{file.name}' removed")
     if not args.nocache:
         try:
             with open("osc_package_emails.cache", "r") as osc_package_emails_file:
-                logging.debug(f"load cache file {osc_package_emails_file.name}")
+                log.debug(f"load cache file {osc_package_emails_file.name}")
                 osc_package_emails = json.load(osc_package_emails_file)
         except IOError:
             osc_package_emails = {}
         try:
             with open("osc_user_emails.cache", "r") as osc_user_emails_file:
-                logging.debug(f"load cache file {osc_user_emails_file.name}")
+                log.debug(f"load cache file {osc_user_emails_file.name}")
                 osc_user_emails = json.load(osc_user_emails_file)
         except IOError:
             osc_user_emails = {}
         try:
             with open("osc_group_emails.cache", "r") as osc_group_emails_file:
-                logging.debug(f"load cache file {osc_group_emails_file.name}")
+                log.debug(f"load cache file {osc_group_emails_file.name}")
                 osc_group_emails = json.load(osc_group_emails_file)
         except IOError:
             osc_group_emails = {}
     else:
-        logging.debug("not using cache because --nocache flag is set")
+        log.debug("not using cache because --nocache flag is set")
 
     # get list of rpmlint errors
-    logging.debug("get rpmlint error type list")
+    log.debug("get rpmlint error type list")
     parent_errors = get_rpmlint_error_list(
         config['BuildCheckStatistics_instance']['url'],
         config['BuildCheckStatistics_instance']['project'],
@@ -172,7 +212,7 @@ def pull(config):
     # import file if it exists, otherwise create a new one
     try:
         with open(args.file, 'r') as jsonfile:
-            logging.debug(f"load existing data file '{jsonfile.name}'")
+            log.debug(f"load existing data file '{jsonfile.name}'")
             data = json.load(jsonfile)
     except FileNotFoundError:
         data = {}
@@ -184,7 +224,9 @@ def pull(config):
 
         # create parent bug dict if it doesn't exist
         if parent_error not in data:
-            logging.debug(f"rpmlint error '{parent_error}' is not in data")
+            log.debug(f"rpmlint error '{parent_error}' is not in data")
+            log.debug("applying template to generate config")
+            config.read_string(template.safe_substitute(rpmlint_error_name=parent_error))
             data.update({
                 parent_error: {
                     'bug_config': {
@@ -199,11 +241,14 @@ def pull(config):
                     "packages": {}}})
 
             with open(args.file, 'w') as outfile:
-                logging.info(f"saving rpmlint error '{parent_error}' to file '{outfile.name}'")
+                log.info(f"saving rpmlint error '{parent_error}'")
+                log.debug(f"to file '{outfile.name}'")
                 json.dump(data, outfile)
+        else:
+            log.info(f"rpmlint error '{parent_error}' already in data. skipping.")
 
         # get list of packages with a given rpmlint error
-        logging.debug(f"getting list of packages with rpmlint error '{parent_error}'")
+        log.debug(f"getting list of packages with rpmlint error '{parent_error}'")
         packages = get_rpmlint_package_list(
             config['BuildCheckStatistics_instance']['url'],
             config['BuildCheckStatistics_instance']['project'],
@@ -216,6 +261,9 @@ def pull(config):
         for package in packages:
             if package not in data[parent_error]["packages"]:
                 package_emails = get_package_bugowner_emails(package)
+                log.debug("applying template to generate config")
+                config.read_string(template.safe_substitute(rpmlint_error_name=parent_error, package_name=package))
+                log.info(f"adding package info of '{package}' to rpmlint error '{parent_error}'")
                 data[parent_error]["packages"].update({
                     package: {
                         'bug_config': {
@@ -227,14 +275,17 @@ def pull(config):
                             'description': config['Bugzilla_instance']['package_bug_description'],
                             'id': ''}}
                 })
+            else:
+                log.info(f"package info of '{package}' already in rpmlint error '{parent_error}'. skipping.")
 
-            with open(args.file, 'w') as outfile:
-                logging.info(f"saving info of package '{package}'")
-                logging.debug(f"within info of rpmlint error '{parent_error}' to file '{outfile.name}'")
-                json.dump(data, outfile)
+        with open(args.file, 'w') as outfile:
+            log.debug(f"saving packages data within data of rpmlint error '{parent_error}' to file '{outfile.name}'")
+            json.dump(data, outfile)
 
 
-def push(config):
+def push(template):
+    config = ConfigParser(interpolation=None)
+    config.read_string(template.template)
     bzapi = bugzilla_init(config["Bugzilla_instance"]["url"], config["Bugzilla_instance"]["login_username"],
                           config["Bugzilla_instance"]["login_password"])
 
@@ -243,8 +294,8 @@ def push(config):
 
     # go through rpmlint error list and create parent bugs if they don't already exist
     for parent_error in data:
-        if not data[parent_error]["bug_config"]["id"]:
-
+        if not data[parent_error]["bug_config"]["id"]:  # TODO: improve  by removing id:'' above and checking for id
+            log.debug(f"rpmlint error '{parent_error}' has no bug in bugzilla yet")
             parent_bug_createinfo = bzapi.build_createbug(
                 assigned_to=data[parent_error]["bug_config"]["assigned_to"],
                 cc=data[parent_error]["bug_config"]["cc"],
@@ -254,19 +305,21 @@ def push(config):
                 summary=data[parent_error]["bug_config"]["summary"],
                 description=data[parent_error]["bug_config"]["description"])
             # created_parent_bug = bzapi.createbug(parent_bug_createinfo)
-            print(f"created parent bug {parent_error}")
+            log.info(f"created parent bug {parent_error} with bug id '{data[parent_error]['bug_config']['id']}'")
             data[parent_error]["bug_config"]["id"] = 1000  # TODO: remove
             # data[parent_error]["bug_config"].update("id"=created_parent_bug.id)
-            print(f"saved parent bug id 1000")
             with open(args.file, 'w') as jsonfile:
+                log.debug(
+                    f"saving bug id '{data[parent_error]['bug_config']['id']}' of rpmlint parent bug '{parent_error}'")
                 json.dump(data, jsonfile)
-            print(f"dumped data to file")
-        else:
-            print(f'[skip] parent already has bug. id: {data[parent_error]["bug_config"]["id"]}')
 
+        else:
+            log.debug(f"rpmlint parent bug already created with id: '{data[parent_error]['bug_config']['id']}'")
+
+        # go through packages of rpmlint error list and create child bugs if they don't already exist
         for package in data[parent_error]["packages"]:
             if not data[parent_error]["packages"][package]["bug_config"]["id"]:
-
+                log.debug(f"package '{package}' has no bug in bugzilla regarding rpmlint error '{parent_error}' yet")
                 child_bug_createinfo = bzapi.build_createbug(
                     assigned_to=data[parent_error]["packages"][package]["bug_config"]["assigned_to"],
                     cc=data[parent_error]["packages"][package]["bug_config"]["cc"],
@@ -277,43 +330,34 @@ def push(config):
                     description=data[parent_error]["packages"][package]["bug_config"]["description"],
                     blocks=data[parent_error]["bug_config"]["id"])
                 # created_child_bug = bzapi.createbug(child_bug_createinfo)
-                print(f"created child bug for package {package}")
                 data[parent_error]["packages"][package]["bug_config"]["id"] = 1337  # TODO: remove
                 # data[parent_error]["packages"][package]["bug_config"].update("id"=created_parent_bug.id)
+                log.info(f"created child bug of {parent_error} for package {package}. id: "
+                         f"{data[parent_error]['packages'][package]['bug_config']['id']}")
                 with open(args.file, 'w') as jsonfile:
+                    log.debug(f"saving bug id {data[parent_error]['packages'][package]['bug_config']['id']} "
+                              f"of package child bug '{package}'")
                     json.dump(data, jsonfile)
-                print(f"dumped data to file")
             else:
-                print(f'[skip] child already has bug. id:'
-                      f'{data[parent_error]["packages"][package]["bug_config"]["id"]}')
+                log.info(
+                    f"package child bug already created with id "
+                    f"'{data[parent_error]['packages'][package]['bug_config']['id']}")
 
 
-def main(config):
+def main(args):
+    with open(args.config, "r") as template_file:
+        template_string = template_file.read()
+    template = Template(template_string)
+    configparser = ConfigParser(interpolation=None) # some names contain a '%'.
+    configparser.read_string(template_string)
+
     if args.operation == "pull":
-        pull(config)
+        pull(template)
     elif args.operation == "push":
-        push(config)
+        push(template)
 
 
 if __name__ == '__main__':
-    # file-rpmlint-bug --pull -c config.ini data.json
-    parser = argparse.ArgumentParser(description='generate bug reports for rpmlint listings in 2 steps.')
-    parser_flags = parser.add_mutually_exclusive_group()
-    parser_operation = parser.add_mutually_exclusive_group()
-    parser_flags.add_argument("-v", "--verbosity", help="increase output verbosity", action="count", default=0)
-    parser_flags.add_argument("-q", "--quiet", help="try to be as quiet as possible", action="store_true")
-    parser_operation.add_argument("--pull", help="pull information from relevant sources to generate data file",
-                                  dest="operation", action="store_const", const="pull")
-    parser_operation.add_argument("--push", help="push information from data file to bugzilla", dest="operation",
-                                  action="store_const", const="push")
-    parser.add_argument("--config", "-c", metavar="CONFIG_FILE", help="configuration file with settings")
-    parser.add_argument("file", metavar="JSON_FILE", help="filename of JSON data file to use")
-    parser.add_argument("--nocache", help="don't use cached package:email dictionary", action="store_true")
-    parser.add_argument("--removecache", help="remove cached package:email dictionary", action="store_true")
-
-    parser_operation.set_defaults(operation="pull")
     args = parser.parse_args()
-    configparser = ConfigParser()
-    configparser.read(args.config)
-
-    sys.exit(main(configparser))
+    set_verbosity(args)
+    main(args)
