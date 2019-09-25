@@ -1,5 +1,5 @@
 argparse
-bugzilla
+python-bugzilla
 requests
 urllib3
 jinja2
