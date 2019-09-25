@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import subprocess
+import signal
 import sys
 import urllib.parse
 import urllib.request
@@ -50,6 +51,12 @@ def set_verbosity(args):
         log.setLevel(logging.INFO)
     elif args.verbosity >= 3:
         log.setLevel(logging.DEBUG)
+
+
+def signal_handler(sig, frame):
+    log.debug("Program will now stop.")
+    log.warning("Your data file may be broken if it the program was closed while saving.")
+    sys.exit(0)
 
 
 def bugzilla_init(apiurl, username, password):
@@ -360,4 +367,5 @@ def main(args):
 if __name__ == '__main__':
     args = parser.parse_args()
     set_verbosity(args)
+    signal.signal(signal.SIGINT, signal_handler)
     main(args)
